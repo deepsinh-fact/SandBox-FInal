@@ -91,17 +91,14 @@ export default function APIMaster() {
             ),
         },
         {
-            title: 'IsDeleted',
-            dataIndex: 'IsDeleted',
-            key: 'IsDeleted',
+            title: 'Status',
+            dataIndex: 'status',
+            key: 'status',
             width: 100,
             align: 'center',
-            render: (isDeleted) => (
-                <span className={`text-xs px-2 py-1 rounded-full font-medium ${isDeleted === 1 || isDeleted === true
-                    ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
-                    : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
-                    }`}>
-                    {isDeleted === 1 || isDeleted === true ? 'Deleted' : 'Active'}
+            render: (record) => (
+                <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100">
+                    Active
                 </span>
             ),
         },
@@ -162,9 +159,13 @@ export default function APIMaster() {
             const result = await response.json();
 
             if (result.success) {
-                // Sort data by CreatedDate (oldest first) or API_Id to ensure new items appear at bottom
-                // Show both active and soft-deleted records
-                const sortedData = (result.data || []).sort((a, b) => {
+                // Filter out deleted items and sort data by CreatedDate (oldest first) or API_Id
+                // Only show active records (hide deleted items from frontend)
+                const activeData = (result.data || []).filter(item =>
+                    item.IsDeleted !== 1 && item.IsDeleted !== true
+                );
+
+                const sortedData = activeData.sort((a, b) => {
                     // First try to sort by CreatedDate if available
                     if (a.CreatedDate && b.CreatedDate) {
                         return new Date(a.CreatedDate) - new Date(b.CreatedDate);

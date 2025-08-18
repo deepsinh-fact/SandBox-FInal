@@ -37,37 +37,15 @@ const executeQuery = (queryString, params = []) => {
 
 
 
-// Function to generate auto Client ID
-const generateClientId = async () => {
-    try {
-        // Get the maximum Client_ClientId and increment it
-        const maxIdQuery = `
-            SELECT TOP 1 CAST(Client_ClientId AS INT) as maxId 
-            FROM ClientMaster 
-            WHERE ISNUMERIC(Client_ClientId) = 1 
-            ORDER BY CAST(Client_ClientId AS INT) DESC
-        `;
 
-        const result = await executeQuery(maxIdQuery, []);
-
-        if (result.length > 0 && result[0].maxId) {
-            return (parseInt(result[0].maxId) + 1).toString();
-        } else {
-            return '1';
-        }
-    } catch (error) {
-        console.error('Error generating Client ID:', error);
-        return Date.now().toString();
-    }
-};
-
-// GET /api/clientmaster/getAllClient - Get all clients
+// GET /api/clientmaster/getAllClient - Get all clients (excluding soft deleted)
 export const getAllClient = async (req, res) => {
     try {
         // console.log('Fetching all clients from ClientMaster table');
 
         const selectQuery = `
             SELECT * FROM ClientMaster 
+            WHERE IsDeleted IS NULL OR IsDeleted = 0
         `;
 
         const clients = await executeQuery(selectQuery);
@@ -191,7 +169,7 @@ export const updateClient = async (req, res) => {
     }
 };
 
-// GET /api/clientmaster/getClientByID/:id - Get client by ID
+// GET /api/clientmaster/getClientByID/:id - Get client by ID (excluding soft deleted)
 export const getClientById = async (req, res) => {
     try {
         const clientId = req.params.id;
@@ -206,7 +184,7 @@ export const getClientById = async (req, res) => {
 
         const selectQuery = `
             SELECT * FROM ClientMaster 
-            WHERE Client_ClientId = ?
+            WHERE Client_ClientId = ? AND (IsDeleted IS NULL OR IsDeleted = 0)
         `;
 
         const clients = await executeQuery(selectQuery, [clientId]);
@@ -214,7 +192,7 @@ export const getClientById = async (req, res) => {
         if (!clients || clients.length === 0) {
             return res.status(404).json({
                 success: false,
-                message: 'Client does not exist'
+                message: 'Client does not exist or has been deleted'
             });
         }
 
@@ -235,37 +213,47 @@ export const getClientById = async (req, res) => {
     }
 };
 
-// DELETE /api/clientmaster/deleteClient/:id - Delete client by ID
+// DELETE /api/clientmaster/deleteClient/:id - Soft delete client by ID
 export const deleteClient = async (req, res) => {
-    console.log("Hello from delete")
+
     try {
         const clientId = parseInt(req.params.id);
+        console.log("Parsed clientId:", clientId);
+        console.log("clientId type:", typeof clientId);
 
         if (isNaN(clientId)) {
+            console.log("Invalid client ID - not a number");
             return res.status(400).json({
                 success: false,
                 message: 'Invalid client ID'
             });
         }
 
-        console.log('Deleting client with ID:', clientId);
+        // Check if client exists and is not already deleted (using AutoId since frontend sends AutoId)
+        const checkQuery = `SELECT * FROM ClientMaster WHERE AutoId = ${clientId} AND (IsDeleted IS NULL OR IsDeleted = 0)`;
+        console.log("Check query:", checkQuery);
 
-        // Check if client exists
-        const checkQuery = `SELECT * FROM ClientMaster WHERE AutoId = ?`;
-        const existingClient = await executeQuery(checkQuery, [clientId]);
-
+        const existingClient = await executeQuery(checkQuery);
+      
         if (!existingClient || existingClient.length === 0) {
+            console.log("Client not found or already deleted");
             return res.status(404).json({
                 success: false,
-                message: 'Client not found'
+                message: 'Client not found or already deleted'
             });
         }
 
-        // Delete the client
-        const deleteQuery = `DELETE FROM ClientMaster WHERE AutoId = ?`;
-        await executeQuery(deleteQuery, [clientId]);
+        console.log("Client found, proceeding with soft delete");
+        console.log("Client to delete:", existingClient[0]);
 
-        console.log('Client deleted successfully:', existingClient[0]);
+        // Soft delete the client by setting IsDeleted = 1 (using AutoId)
+        const softDeleteQuery = `UPDATE ClientMaster SET IsDeleted = 1 WHERE AutoId = ${clientId}`;
+        console.log("Soft delete query:", softDeleteQuery);
+
+        const updateResult = await executeQuery(softDeleteQuery);
+        console.log("Update result:", updateResult);
+
+        console.log('Client soft deleted successfully:', existingClient[0]);
 
         res.json({
             success: true,
@@ -273,7 +261,10 @@ export const deleteClient = async (req, res) => {
             data: existingClient[0]
         });
     } catch (error) {
+        console.error('=== DELETE ERROR ===');
         console.error('Error deleting client:', error);
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
         res.status(500).json({
             success: false,
             message: 'Internal server error',
@@ -287,6 +278,7 @@ export const addClient = async (req, res) => {
     try {
         const {
             ClientName,
+            Client_ClientId,
             ClientContactNumber,
             ClientAddress,
             ClientPAN,
@@ -298,7 +290,7 @@ export const addClient = async (req, res) => {
 
         console.log('Creating new client:', req.body);
 
-        // Basic validation - only ClientName is required now
+        // Basic validation - ClientName and Client_ClientId are required
         if (!ClientName) {
             return res.status(400).json({
                 success: false,
@@ -306,9 +298,25 @@ export const addClient = async (req, res) => {
             });
         }
 
-        // Auto-generate Client_ClientId
-        const autoGeneratedClientId = await generateClientId();
-        console.log('Auto-generated Client ID:', autoGeneratedClientId);
+        if (!Client_ClientId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Client ID is required'
+            });
+        }
+
+        // Check if Client_ClientId already exists
+        const checkClientIdQuery = `SELECT * FROM ClientMaster WHERE Client_ClientId = ? AND (IsDeleted IS NULL OR IsDeleted = 0)`;
+        const existingClient = await executeQuery(checkClientIdQuery, [Client_ClientId]);
+
+        if (existingClient && existingClient.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Client ID already exists. Please choose a different Client ID.'
+            });
+        }
+
+        console.log('Using provided Client ID:', Client_ClientId);
 
         // Get current timestamp for CreatedDate
         const currentDateTime = new Date().toISOString();
@@ -344,7 +352,7 @@ export const addClient = async (req, res) => {
             ClientPAN || null,
             ClientGST || null,
             ClientCIN || null,
-            autoGeneratedClientId,
+            Client_ClientId,
             Client_SecreteKey || null,
             currentUser
         ];
@@ -356,16 +364,13 @@ export const addClient = async (req, res) => {
         // Fetch the newly created client
         const selectQuery = `SELECT * FROM ClientMaster WHERE Client_ClientId = ?`;
 
-        const newClient = await executeQuery(selectQuery, [autoGeneratedClientId]);
+        const newClient = await executeQuery(selectQuery, [Client_ClientId]);
         // console.log('Newly created client:', newClient[0]);
 
         res.status(201).json({
             success: true,
             message: 'Client created successfully',
-            data: {
-                ...newClient[0],
-                Client_ClientId: autoGeneratedClientId
-            }
+            data: newClient[0]
         });
     } catch (error) {
         console.error('Error creating client:', error);
