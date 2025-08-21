@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import Service from '../../Service/Service';
 import TableComponents from '../../components/ant/TableComponents';
 import toast, { Toaster } from 'react-hot-toast';
-import { Modal } from 'antd';
 import DeleteConfirmationModal from '../../components/common/DeleteConfirmationModal';
-
+import { AddAPIModal, EditAPIModal } from '../../components/modals/APIModals';
 
 export default function APIMaster() {
     const userData = Service.getUserdata();
@@ -83,7 +82,6 @@ export default function APIMaster() {
           key: 'Version',
           width: 80,
           render: (version) => {
-              // Check if version is null, undefined, or empty string
               if (version === null || version === undefined || version === '') {
                   return (
                       <span className="text-sm px-2 py-1 text-gray-400 italic">
@@ -99,35 +97,35 @@ export default function APIMaster() {
           },
       },
         {
-            title: 'Method Name',
+            title: 'Method',
             dataIndex: 'MethodName',
             key: 'MethodName',
-            width: 200,
+            width: 80,
             render: (method) => (
-                <span className="font-medium text-gray-900 dark:text-white">
-                    {method || 'N/A'}
+                <span className="text-sm px-2 py-1 bg-blue-100 text-blue-800 rounded">
+                    {method || 'GET'}
                 </span>
             ),
         },
         {
-            title: 'Base Price (₹)',
+            title: 'Base Price',
             dataIndex: 'BasePrice',
             key: 'BasePrice',
-            width: 120,
+            width: 100,
             render: (price) => (
-                <span className="text-sm px-2 py-1 ">
-                    {price ? `${parseFloat(price).toFixed(2)}` : 'N/A'}
+                <span className="text-sm font-medium text-green-600">
+                    ₹{price || 0}
                 </span>
             ),
         },
         {
-            title: 'Sell Price(₹)',
+            title: 'Sell Price',
             dataIndex: 'SellPrice',
             key: 'SellPrice',
-            width: 120,
+            width: 100,
             render: (price) => (
-                <span className="text-sm px-2 py-1 rounded">
-                    {price ? `${parseFloat(price).toFixed(2)}` : 'N/A'}
+                <span className="text-sm font-medium text-blue-600">
+                    ₹{price || 0}
                 </span>
             ),
         },
@@ -137,30 +135,8 @@ export default function APIMaster() {
             key: 'CreatedBy',
             width: 120,
             render: (createdBy) => (
-                <span className="text-sm px-2 py-1  dark:text-blue-300 rounded">
-                    {createdBy}
-                </span>
-            ),
-        },
-        {
-            title: 'Created Date',
-            dataIndex: 'CreatedDate',
-            key: 'CreatedDate',
-            width: 120,
-            render: (date) => (
-                <span className="text-sm px-2 py-1 dark:text-green-300 rounded">
-                    {new Date(date).toLocaleDateString()}
-                </span>
-            ),
-        },
-        {
-            title: 'Updated By',
-            dataIndex: 'UpdatedBy',
-            key: 'UpdatedBy',
-            width: 120,
-            render: (updatedBy) => (
-                <span className="text-sm px-2 py-1 dark:text-orange-300 rounded">
-                    {updatedBy || 'N/A'}
+                <span className="text-sm px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">
+                    {createdBy || 'System'}
                 </span>
             ),
         },
@@ -175,7 +151,6 @@ export default function APIMaster() {
                 </span>
             ),
         },
-     
         {
             title: 'Edit',
             key: 'edit',
@@ -194,7 +169,6 @@ export default function APIMaster() {
                 >
                     <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                         <path d="M17.414 2.586a2 2 0 010 2.828l-8.95 8.95a1 1 0 01-.39.24l-3.5 1a1 1 0 01-1.236-1.236l1-3.5a1 1 0 01.24-.39l8.95-8.95a2 2 0 012.828 0z" />
-                        <path d="M12.5 4.5l3 3" />
                     </svg>
                 </button>
             ),
@@ -222,7 +196,6 @@ export default function APIMaster() {
             ),
         },
     ];
-
 
     const fetchApiData = async () => {
         try {
@@ -278,7 +251,6 @@ export default function APIMaster() {
                 return;
             }
             
-  
             // Process the data to ensure all required fields are present
             const processedData = data.map(item => {
                 // Ensure all required fields have default values
@@ -360,6 +332,10 @@ export default function APIMaster() {
             return;
         }
 
+        if (!formData.APIName) {
+            setError('API Name is required');
+            return;
+        }
 
         // Validate numeric fields
         if (formData.BasePrice && isNaN(Number(formData.BasePrice))) {
@@ -471,7 +447,6 @@ export default function APIMaster() {
                 UpdatedBy: 'Test User' // Using 'Test User' as the default value
             };
             
-          
             // Use AutoID for the update
             const apiId = editingApi.API_Id || editingApi.APIId;
           
@@ -480,7 +455,6 @@ export default function APIMaster() {
             }
 
             const result = await Service.updateAPIMaster(apiId, apiData);
-            console.log('Update response:', result);
 
             if (result && result.success) {
                 toast.success('API updated successfully!');
@@ -623,335 +597,76 @@ export default function APIMaster() {
     };
 
     return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">API Master</h1>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-          Add New API
-        </button>
-      </div>
+        <div className="container mx-auto px-4 py-8">
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">API Master</h1>
+                <button
+                    onClick={() => setShowAddModal(true)}
+                    className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+                >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Add New API
+                </button>
+            </div>
 
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-          <strong className="font-bold">Error: </strong>
-          <span className="block sm:inline">{error}</span>
+            {error && (
+                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+                    <strong className="font-bold">Error: </strong>
+                    <span className="block sm:inline">{error}</span>
+                </div>
+            )}
+
+            {loading ? (
+                <div className="flex justify-center items-center h-64">
+                    <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
+                </div>
+            ) : (
+                <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                    <TableComponents
+                        columns={columns}
+                        dataSource={apiData}
+                        loading={loading}
+                        scroll={{ x: 800 }}
+                        rowKey="API_Id"
+                    />
+                </div>
+            )}
+
+            {/* Add API Modal */}
+            <AddAPIModal
+                isOpen={showAddModal}
+                onClose={closeModal}
+                onSubmit={handleAddApi}
+                formData={formData}
+                onInputChange={handleInputChange}
+                isLoading={formLoading}
+                error={error}
+            />
+
+            {/* Edit API Modal */}
+            <EditAPIModal
+                isOpen={showEditModal}
+                onClose={closeEditModal}
+                onSubmit={handleUpdateApi}
+                formData={formData}
+                onInputChange={handleInputChange}
+                isLoading={formLoading}
+                error={error}
+            />
+
+            {/* Delete Confirmation Modal */}
+            <DeleteConfirmationModal
+                isOpen={showDeleteModal}
+                onClose={closeDeleteModal}
+                onConfirm={handleDeleteConfirm}
+                isLoading={deleteLoading}
+                title="Delete API"
+                message="Are you sure you want to delete this API?"
+            />
+
+            <Toaster />
         </div>
-      )}
-
-      {loading ? (
-        <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500"></div>
-        </div>
-      ) : (
-        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-          <TableComponents
-            columns={columns}
-            dataSource={apiData}
-            loading={loading}
-            scroll={{ x: 800 }}
-            rowKey="API_Id"
-          />
-        </div>
-      )}
-
-      {/* Add API Modal */}
-      <Modal
-        title="Add New API"
-        open={showAddModal}
-        onCancel={closeModal}
-        footer={null}
-        width={600}
-      >
-        <form onSubmit={handleAddApi} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              API Id *
-            </label>
-            <input
-              type="text"
-              name="APIId"
-              value={formData.APIId}
-              onChange={handleInputChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-              placeholder="Enter unique API ID"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              API Code *
-            </label>
-            <input
-              type="text"
-              name="APICode"
-              value={formData.APICode}
-              onChange={handleInputChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-              placeholder="Enter unique API Code"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              API Name *
-            </label>
-            <input
-              type="text"
-              name="APIName"
-              value={formData.APIName}
-              onChange={handleInputChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-              placeholder="Enter API Name"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Version
-              </label>
-              <input
-                type="text"
-                name="Version"
-                value={formData.Version || '1.0'}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., 1.0"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Method
-              </label>
-              <input
-                type="text"
-                name="MethodName"
-                value={formData.MethodName || 'GET'}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., GET, POST"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Base Price (₹)
-              </label>
-              <input
-                type="number"
-                name="BasePrice"
-                value={formData.BasePrice}
-                onChange={handleInputChange}
-                step="0.01"
-                min="0"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="0.00"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Sell Price (₹)
-              </label>
-              <input
-                type="number"
-                name="SellPrice"
-                value={formData.SellPrice}
-                onChange={handleInputChange}
-                step="0.01"
-                min="0"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="0.00"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              API Description
-            </label>
-            <textarea
-              name="APIDescription"
-              value={formData.APIDescription}
-              onChange={handleInputChange}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Enter API Description"
-            />
-          </div>
-
-          <div className="flex justify-end space-x-3 mt-6">
-            <button
-              type="button"
-              onClick={closeModal}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-              disabled={formLoading}
-            >
-              {formLoading ? 'Adding...' : 'Add API'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Edit API Modal */}
-      <Modal
-        title="Edit API"
-        open={showEditModal}
-        onCancel={closeEditModal}
-        footer={null}
-        width={600}
-      >
-        <form onSubmit={handleUpdateApi} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              API Code *
-            </label>
-            <input
-              type="text"
-              name="APICode"
-              value={formData.APICode}
-              onChange={handleInputChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-              placeholder="Enter unique API Code"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              API Name *
-            </label>
-            <input
-              type="text"
-              name="APIName"
-              value={formData.APIName}
-              onChange={handleInputChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-              placeholder="Enter API Name"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Version
-              </label>
-              <input
-                type="text"
-                name="Version"
-                value={formData.Version || '1.0'}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., 1.0"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Method
-              </label>
-              <input
-                type="text"
-                name="MethodName"
-                value={formData.MethodName || 'GET'}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., GET, POST"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Base Price (₹)
-              </label>
-              <input
-                type="number"
-                name="BasePrice"
-                value={formData.BasePrice}
-                onChange={handleInputChange}
-                step="0.01"
-                min="0"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="0.00"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Sell Price (₹)
-              </label>
-              <input
-                type="number"
-                name="SellPrice"
-                value={formData.SellPrice}
-                onChange={handleInputChange}
-                step="0.01"
-                min="0"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="0.00"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              API Description
-            </label>
-            <textarea
-              name="APIDescription"
-              value={formData.APIDescription}
-              onChange={handleInputChange}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Enter API Description"
-            />
-          </div>
-
-          <div className="flex justify-end space-x-3 mt-6">
-            <button
-              type="button"
-              onClick={closeEditModal}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-              disabled={formLoading}
-            >
-              {formLoading ? 'Updating...' : 'Update API'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Delete Confirmation Modal */}
-      <DeleteConfirmationModal
-        isOpen={showDeleteModal}
-        onClose={closeDeleteModal}
-        onConfirm={handleDeleteConfirm}
-        isLoading={deleteLoading}
-        title="Delete API"
-        message="Are you sure you want to delete this API?"
-      />
-    </div>
-  );
+    );
 }

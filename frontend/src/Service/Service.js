@@ -72,26 +72,7 @@ const getUserdata = () => {
   try {
     // return JSON.parse(localStorage.getItem("userdata"));
     const data = JSON.parse(localStorage.getItem("userdata"));
-    // const res = {
-    //   ...data,
-    //   // email: "test3.gmail.com",
-    //   is_corporate_admin: true,
-    //   packages: {
-    //     ...data?.packages,
-    //     CIN: true,
-    //     GST: true,
-    //     MAD: true,
-    //     MSME: true,
-    //     PAN: true,
-    //     Mobile360: true,
-    //     OSINT: true,
-    //     IEC: true,
-    //     DIN: true,
-    //     MAD: true,
-    //     DARPAN: true,
-    //   }
-    // };
-
+   
     return data;
   } catch (error) {
     console.error(error);
@@ -559,7 +540,7 @@ const fetchClientMasters = async () => {
   } catch (error) {
     console.error('Error fetching client masters:', error);
 
-    // If it's a network error, try to provide more helpful information
+    // If it's a network error
     if (error.message.includes('Failed to fetch')) {
       console.error('Network error - is the backend server running on http://localhost:3000?');
       return {
@@ -592,6 +573,10 @@ const createClientMaster = async (clientData) => {
 
 const updateClientMaster = async (clientId, clientData) => {
   try {
+    console.log('=== SERVICE UPDATE DEBUG ===');
+    console.log('Service: Client ID:', clientId);
+    console.log('Service: Client Data:', JSON.stringify(clientData, null, 2));
+
     const response = await fetch(`${CONFIG.BASE_URL_ALL}/api/clientmaster/updateClient/${clientId}`, {
       method: 'PUT',
       headers: {
@@ -599,7 +584,11 @@ const updateClientMaster = async (clientId, clientData) => {
       },
       body: JSON.stringify(clientData)
     });
+
+    console.log('Service: Response status:', response.status);
     const result = await response.json();
+    console.log('Service: Response result:', JSON.stringify(result, null, 2));
+
     return result;
   } catch (error) {
     console.error('Error updating client master:', error);
@@ -632,16 +621,35 @@ const deleteClientMaster = async (clientId) => {
     }
 
     const result = await response.json();
-    console.log('Service: Delete response result:', result);
-    console.log('Service: Result success:', result.success);
-    console.log('Service: Result message:', result.message);
-    console.log('=== SERVICE DELETE END ===');
+
     return result;
   } catch (error) {
-    console.error('Service: Error deleting client master:', error);
-    console.error('Service: Error message:', error.message);
-    console.error('Service: Error stack:', error.stack);
-    console.log('=== SERVICE DELETE END (ERROR) ===');
+
+    throw error;
+  }
+};
+
+const updateAPIMaster = async (apiId, apiData) => {
+  try {
+    console.log('Updating API with ID:', apiId);
+    console.log('API Data:', JSON.stringify(apiData, null, 2));
+    
+    const response = await fetch(`${CONFIG.BASE_URL_ALL}/api/apimaster/updateAPI/${apiId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(apiData)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || 'Failed to update API');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error updating API:', error);
     throw error;
   }
 };
@@ -687,6 +695,7 @@ const Service = {
   fetchClientMasters,
   createClientMaster,
   updateClientMaster,
-  deleteClientMaster
+  deleteClientMaster,
+  updateAPIMaster
 };
 export default Service;

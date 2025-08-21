@@ -736,7 +736,7 @@ const Navbar = (props) => {
                             </button>
                         </p>
                     </div> */}
-                    <Nevlogo className="lg:flex hidden items-center justify-center gap-4" />
+                    {/* <Nevlogo className="lg:flex hidden items-center justify-center gap-4" /> */}
                 </form>
             </nav>
             <AntModalComponents

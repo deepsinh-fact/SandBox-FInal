@@ -81,6 +81,8 @@ export const updateClient = async (req, res) => {
 
         const {
             ClientName,
+            ClientUserName,
+            ClientPassword,
             ClientContactNumber,
             ClientAddress,
             ClientPAN,
@@ -89,8 +91,11 @@ export const updateClient = async (req, res) => {
             Client_SecreteKey
         } = req.body;
 
-        console.log('Updating client:', clientId, req.body);
-
+        console.log('=== UPDATE CLIENT DEBUG ===');
+        console.log('Client ID:', clientId);
+        console.log('Request body:', JSON.stringify(req.body, null, 2));
+        console.log('ClientUserName value:', ClientUserName, 'Type:', typeof ClientUserName);
+        console.log('ClientPassword value:', ClientPassword, 'Type:', typeof ClientPassword);
 
         // Check if client exists
         const checkQuery = `SELECT * FROM ClientMaster WHERE AutoId = ${clientId}`;
@@ -103,14 +108,36 @@ export const updateClient = async (req, res) => {
             });
         }
 
+        console.log('Existing client before update:', JSON.stringify(existingClient[0], null, 2));
+
         // Build update query dynamically based on provided fields
         let updateFields = [];
         let updateValues = [];
 
         if (ClientName !== undefined) {
+            console.log('Adding ClientName to update:', ClientName);
             updateFields.push('ClientName = ?');
             updateValues.push(ClientName);
         }
+
+        // Only update ClientUserName if it's provided and not empty
+        if (ClientUserName !== undefined && ClientUserName !== '') {
+            console.log('✓ Adding ClientUserName to update:', ClientUserName);
+            updateFields.push('ClientUserName = ?');
+            updateValues.push(ClientUserName);
+        } else {
+            console.log('✗ Skipping ClientUserName update - value:', ClientUserName, 'undefined?', ClientUserName === undefined, 'empty?', ClientUserName === '');
+        }
+
+        // Only update ClientPassword if it's provided and not empty
+        if (ClientPassword !== undefined && ClientPassword !== '') {
+            console.log('✓ Adding ClientPassword to update (length:', ClientPassword.length, ')');
+            updateFields.push('ClientPassword = ?');
+            updateValues.push(ClientPassword);
+        } else {
+            console.log('✗ Skipping ClientPassword update - undefined?', ClientPassword === undefined, 'empty?', ClientPassword === '');
+        }
+
         if (ClientContactNumber !== undefined) {
             updateFields.push('ClientContactNumber = ?');
             updateValues.push(ClientContactNumber);
@@ -145,14 +172,21 @@ export const updateClient = async (req, res) => {
         }
 
         const updateQuery = `UPDATE ClientMaster SET ${updateFields.join(', ')} WHERE AutoId = ${clientId}`;
+        
+        console.log('=== EXECUTING UPDATE ===');
+        console.log('Update query:', updateQuery);
+        console.log('Update values:', updateValues);
+        console.log('Update fields count:', updateFields.length);
 
-        await executeQuery(updateQuery, updateValues);
+        const updateResult = await executeQuery(updateQuery, updateValues);
+        console.log('Update result:', updateResult);
 
         // Fetch the updated client
         const selectQuery = `SELECT * FROM ClientMaster WHERE AutoId = ${clientId}`;
         const updatedClient = await executeQuery(selectQuery);
 
-        console.log('Updated client:', updatedClient[0]);
+        console.log('=== AFTER UPDATE ===');
+        console.log('Updated client:', JSON.stringify(updatedClient[0], null, 2));
 
         res.json({
             success: true,
@@ -231,10 +265,9 @@ export const deleteClient = async (req, res) => {
 
         // Check if client exists and is not already deleted (using AutoId since frontend sends AutoId)
         const checkQuery = `SELECT * FROM ClientMaster WHERE AutoId = ${clientId} AND (IsDeleted IS NULL OR IsDeleted = 0)`;
-        console.log("Check query:", checkQuery);
 
         const existingClient = await executeQuery(checkQuery);
-      
+
         if (!existingClient || existingClient.length === 0) {
             console.log("Client not found or already deleted");
             return res.status(404).json({
@@ -261,10 +294,7 @@ export const deleteClient = async (req, res) => {
             data: existingClient[0]
         });
     } catch (error) {
-        console.error('=== DELETE ERROR ===');
-        console.error('Error deleting client:', error);
-        console.error('Error message:', error.message);
-        console.error('Error stack:', error.stack);
+
         res.status(500).json({
             success: false,
             message: 'Internal server error',
@@ -278,6 +308,8 @@ export const addClient = async (req, res) => {
     try {
         const {
             ClientName,
+            ClientUserName,
+            ClientPassword,
             Client_ClientId,
             ClientContactNumber,
             ClientAddress,
@@ -289,6 +321,7 @@ export const addClient = async (req, res) => {
         } = req.body;
 
         console.log('Creating new client:', req.body);
+        console.log('ClientUserName value:', ClientUserName);
 
         // Basic validation - ClientName and Client_ClientId are required
         if (!ClientName) {
@@ -302,6 +335,13 @@ export const addClient = async (req, res) => {
             return res.status(400).json({
                 success: false,
                 message: 'Client ID is required'
+            });
+        }
+
+        if (!ClientUserName) {
+            return res.status(400).json({
+                success: false,
+                message: 'ClientUserName is required'
             });
         }
 
@@ -320,7 +360,7 @@ export const addClient = async (req, res) => {
 
         // Get current timestamp for CreatedDate
         const currentDateTime = new Date().toISOString();
-        const currentUser = CreatedBy || 'System';
+        const currentUser = CreatedBy || 'Test User';
 
         console.log('Current User:', currentUser);
         console.log('Current DateTime:', currentDateTime);
@@ -330,6 +370,8 @@ export const addClient = async (req, res) => {
             INSERT INTO ClientMaster (
                 AutoId,
                 ClientName,
+                ClientUserName,
+                ClientPassword,
                 ClientContactNumber,
                 ClientAddress,
                 ClientPAN,
@@ -341,12 +383,14 @@ export const addClient = async (req, res) => {
                 CreatedDate
             ) VALUES (
                 (SELECT ISNULL(MAX(AutoId), 0) + 1 FROM ClientMaster),
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE()
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, GETDATE()
             )
         `;
 
         const insertParams = [
             ClientName,
+            ClientUserName || null,
+            ClientPassword || null,
             ClientContactNumber || null,
             ClientAddress || null,
             ClientPAN || null,
@@ -358,6 +402,9 @@ export const addClient = async (req, res) => {
         ];
 
 
+
+        console.log('Insert query:', insertQuery);
+        console.log('Insert params:', insertParams);
 
         await executeQuery(insertQuery, insertParams);
 

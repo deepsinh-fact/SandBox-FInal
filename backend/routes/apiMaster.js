@@ -1,61 +1,30 @@
 import express from 'express';
-import {
-    getAllAPI,
-    getAPIById,
-    addAPI,
-    updateAPI,
-    deleteAPI,
-    restoreAPI,
-    debugDatabase
-} from '../controllers/apiMaster.js';
+import { addAPI, getAllAPIs, updateAPI, deleteAPI } from '../controllers/apiMaster.js';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const sql = require('msnodesqlv8');
+import 'dotenv/config';
+
+const connectionString = `server=${process.env.DB_SERVER || "FACT-LAP-07"};Database=${process.env.DB_NAME || "Fact"};Trusted_Connection=Yes;Driver={ODBC Driver 17 for SQL Server};`;
 
 const router = express.Router();
 
+// GET /api/apimaster - Get all APIs
+router.get('/', getAllAPIs);
 
-router.get('/getAllAPI', getAllAPI);
-
-router.get('/debug', debugDatabase);
-
-// Test endpoint for update functionality
-router.post('/testUpdate', async (req, res) => {
-    try {
-        const { originalId, newData } = req.body;
-        console.log('Test update request:', { originalId, newData });
-        
-        res.json({
-            success: true,
-            message: 'Test endpoint working',
-            received: { originalId, newData }
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Test endpoint error',
-            error: error.message
-        });
-    }
-});
-
-router.get('/getAPIByID/:id', getAPIById);
-
+// POST /api/apimaster/addAPI - Create new API
 router.post('/addAPI', addAPI);
 
-// Test endpoint to verify routing
-router.put('/test/:id', (req, res) => {
-    res.json({
-        success: true,
-        message: 'Test route working',
-        id: req.params.id,
-        body: req.body
-    });
-});
+// PUT /api/apimaster/updateAPI/:id - Update existing API
+router.put('/updateAPI/:id', (req, res, next) => {
+    console.log('Update API endpoint hit. ID:', req.params.id);
+    next();
+}, updateAPI);
 
-router.put('/updateAPI/:id', updateAPI);
-
-// DELETE /api/apimaster/deleteAPI/:id - Delete API by ID
-router.delete('/deleteAPI/:id', deleteAPI);
-
-// PUT /api/apimaster/restoreAPI/:id - Restore soft-deleted API by ID
-router.put('/restoreAPI/:id', restoreAPI);
+// Soft delete
+router.delete('/deleteAPI/:id', (req, res, next) => {
+    console.log('Delete API endpoint hit. ID:', req.params.id);
+    next();
+}, deleteAPI);
 
 export default router;

@@ -899,21 +899,9 @@ export default function Admin(props) {
     dispatch(updateState({ isMe: Service.getUserdata() }));
   }, [dispatch]);
 
-  // Dashboard Count
-  React.useEffect(() => {
-    if (!isGetDashboardCount) {
-      dispatch(GetDashboardCount());
-    }
-  }, [isGetDashboardCount, dispatch]);
+  
 
-  // GetDashboardCategoryCount
-  React.useEffect(() => {
-    dispatch(GetDashboardCategoryCount());
-  }, []);
-  // Popularsearch
-  React.useEffect(() => {
-    dispatch(Popularsearch());
-  }, []);
+
 
   //Routes In Page
   const getActiveRoute = (routes) => {

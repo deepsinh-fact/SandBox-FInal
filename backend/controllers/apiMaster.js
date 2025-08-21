@@ -3,377 +3,308 @@ const require = createRequire(import.meta.url);
 const sql = require('msnodesqlv8');
 import 'dotenv/config';
 
+// Helper function to ensure APIMaster table exists with correct schema
+const ensureAPIMasterTable = async () => {
+    try {
+        const createTableQuery = `
+            IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'APIMaster')
+            BEGIN
+                CREATE TABLE APIMaster (
+                    APIId INT IDENTITY(1,1) PRIMARY KEY,
+                    APIName NVARCHAR(150) NOT NULL,
+                    APIDescription NVARCHAR(MAX) NULL,
+                    APICode NVARCHAR(50) NOT NULL,
+                    MethodName NVARCHAR(20) DEFAULT 'GET',
+                    BasePrice DECIMAL(10, 2) DEFAULT 0.00,
+                    SellPrice DECIMAL(10, 2) DEFAULT 0.00,
+                    CreatedBy  NVARCHAR(100) NULL,
+                    CreatedDate DATETIME DEFAULT GETDATE(),
+                    UpdatedBy NVARCHAR(100) NULL,
+                    UpdatedDate DATETIME NULL,
+                    IsDeleted BIT DEFAULT 0
+                )
+                PRINT 'APIMaster table created successfully'
+            END
+            
+            -- Ensure IsDeleted column exists (for backward compatibility)
+            IF NOT EXISTS (SELECT * FROM sys.columns 
+                          WHERE object_id = OBJECT_ID('APIMaster') 
+                          AND name = 'IsDeleted')
+            BEGIN
+                ALTER TABLE APIMaster ADD IsDeleted BIT DEFAULT 0
+                PRINT 'Added IsDeleted column to APIMaster table'
+            END
+        `;
+        
+        await executeQuery(createTableQuery);
+        console.log('APIMaster table verified/created');
+    } catch (error) {
+        console.error('Error ensuring APIMaster table:', error);
+        throw error; 
+    }
+};
+
 // Connection string for msnodesqlv8 with Windows Authentication
 const connectionString = `server=${process.env.DB_SERVER || "FACT-LAP-07"};Database=${process.env.DB_NAME || "Fact"};Trusted_Connection=Yes;Driver={ODBC Driver 17 for SQL Server};`;
 
 // Helper function to execute SQL queries
 const executeQuery = (queryString, params = []) => {
     return new Promise((resolve, reject) => {
-        console.log('Executing SQL query:', queryString);
-        console.log('With parameters:', params);
-        console.log('Connection string:', connectionString.replace(/server=.*?;/, 'server=***;'));
-
-        if (params.length === 0) {
-            sql.query(connectionString, queryString, (err, rows) => {
-                if (err) {
-                    console.error('SQL Error:', err);
-                    console.error('Query was:', queryString);
-                    reject(new Error(`Database error: ${err.message}`));
-                } else {
-                    console.log('Query successful, rows returned:', rows ? rows.length : 0);
-                    resolve(rows);
+        console.log('\n=== SQL Query ===');
+        console.log('Query:', queryString.replace(/\s+/g, ' ').trim());
+        console.log('Parameters:', params);
+        
+        // For msnodesqlv8, we use sql.query directly
+        sql.query(connectionString, queryString, params, (err, rows) => {
+            if (err) {
+                console.error('Database error:', err);
+                reject(new Error(`Database error: ${err.message}`));
+                return;
+            }
+            
+            console.log('Query executed successfully');
+            
+            // msnodesqlv8 returns rows directly
+            if (rows && Array.isArray(rows)) {
+                console.log(`Returned ${rows.length} rows`);
+                if (rows.length > 0) {
+                    console.log('First row:', JSON.stringify(rows[0], null, 2));
                 }
-            });
-        } else {
-            sql.query(connectionString, queryString, params, (err, rows) => {
-                if (err) {
-                    console.error('SQL Error:', err);
-                    console.error('Query was:', queryString);
-                    console.error('Parameters were:', params);
-                    reject(new Error(`Database error: ${err.message}`));
-                } else {
-                    console.log('Query successful, rows returned:', rows ? rows.length : 0);
-                    resolve(rows);
-                }
-            });
-        }
+                resolve(rows);
+            } else {
+                console.log('No records returned or unexpected result format');
+                resolve(rows || []);
+            }
+        });
     });
 };
 
-// Note: API_Id is now user-provided, no auto-generation needed
-
-// GET /api/apimaster/getAPIByID/:id - Get API by ID
-export const getAPIById = async (req, res) => {
+// Get all APIs
+export const getAllAPIs = async (req, res) => {
     try {
-        const { id } = req.params;
-        console.log(`Fetching API with ID: ${id} (type: ${typeof id})`);
-
-        // Try to ensure table exists, but don't fail if it already exists
+        console.log('Fetching all APIs from APIMaster table');
+        
+        // First, try with IsDeleted check
         try {
-            await ensureAPIMasterTable();
-        } catch (tableError) {
-            console.log('Table setup warning (continuing):', tableError.message);
-        }
-
-        // Ensure the ID is treated as a string
-        const apiId = String(id);
-        console.log(`Converted API ID: ${apiId}`);
-
-        // First, let's see what data exists in the table for debugging
-        const debugQuery = `SELECT TOP 10 API_Id, API_Name FROM APIMaster`;
-        const allApis = await executeQuery(debugQuery);
-        console.log('Available APIs in database:', allApis);
-
-        // Also check for exact matches with different case sensitivity
-        const caseInsensitiveQuery = `SELECT * FROM APIMaster WHERE UPPER(API_Id) = UPPER('${apiId.replace(/'/g, "''")}')`;
-        const caseInsensitiveResult = await executeQuery(caseInsensitiveQuery);
-        console.log('Case insensitive search result:', caseInsensitiveResult);
-
-        // Use string interpolation to avoid parameter binding issues with string IDs
-        // Also filter out soft deleted records
-        const selectQuery = `SELECT * FROM APIMaster WHERE API_Id = '${apiId.replace(/'/g, "''")}' AND (IsDeleted = 0)`;
-        const api = await executeQuery(selectQuery);
-
-        if (api.length === 0) {
-            // If not found, let's also try a LIKE search to see if there are similar IDs
-            const likeQuery = `SELECT * FROM APIMaster WHERE API_Id LIKE '%${apiId.replace(/'/g, "''")}%'`;
-            const likeResult = await executeQuery(likeQuery);
-            console.log('LIKE search result:', likeResult);
-
-            return res.status(404).json({
-                success: false,
-                message: 'API not found',
-                debug: {
-                    searchedFor: apiId,
-                    availableIds: allApis.map(a => a.API_Id),
-                    caseInsensitiveMatch: caseInsensitiveResult.length > 0,
-                    similarIds: likeResult.map(a => a.API_Id)
-                }
-            });
-        }
-
-        res.status(200).json({
-            success: true,
-            message: 'API retrieved successfully',
-            data: api[0]
-        });
-    } catch (error) {
-        console.error('Error fetching API by ID:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Internal server error',
-            error: error.message
-        });
-    }
-};
-
-const ensureAPIMasterTable = async () => {
-    try {
-        // First check if table exists and get its structure
-        const checkTableQuery = `
-            SELECT COLUMN_NAME, DATA_TYPE 
-            FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_NAME = 'APIMaster'
-            ORDER BY ORDINAL_POSITION
-        `;
-
-        const tableStructure = await executeQuery(checkTableQuery);
-        console.log('Current APIMaster table structure:', tableStructure);
-
-        // If table doesn't exist, create it
-        if (!tableStructure || tableStructure.length === 0) {
-            const createTableQuery = `
-                CREATE TABLE APIMaster (
-                    AutoId INT IDENTITY(1,1) PRIMARY KEY,
-                    API_Id NVARCHAR(50) NOT NULL UNIQUE,
-                    API_Name NVARCHAR(255) NOT NULL,
-                    API_Description NVARCHAR(MAX),
-                    API_Code VARCHAR(50),
-                    CreatedDate DATETIME DEFAULT GETDATE(),
-                    IsDeleted BIT DEFAULT 0
-                )
+            const query = `
+                SELECT 
+                    APIId,
+                    APIName,
+                    APIDescription,
+                    APICode,
+                    Version,  -- Added Version column
+                    MethodName,
+                    BasePrice,
+                    SellPrice,
+                    CreatedBy,
+                    CreatedDate,
+                    UpdatedBy,
+                    UpdatedDate
+                FROM APIMaster
+                WHERE IsDeleted = 0 OR IsDeleted IS NULL  -- Handle cases where IsDeleted might be NULL
             `;
+            
+            const apis = await executeQuery(query);
+            console.log(`Fetched ${apis.length} APIs from database`);
+            console.log('API Data from database:', JSON.stringify(apis, null, 2));
+            
+            const response = {
+                success: true,
+                message: 'APIs retrieved successfully',
+                data: apis
+            };
+            
+            console.log('Sending response:', JSON.stringify(response, null, 2));
+            return res.status(200).json(response);
+        } catch (error) {
+            // If the error is about IsDeleted column, try without it
+            if (error.message && error.message.includes('IsDeleted')) {
+                console.log('IsDeleted column not found, trying without it');
+                const query = `
+                    SELECT 
+                        APIId,
+                        APIName,
+                        APIDescription,
+                        APICode,
+                        Version,  
+                        MethodName,
+                        BasePrice,
+                        SellPrice,
+                        CreatedBy,
+                        CreatedDate,
+                        UpdatedBy,
+                        UpdatedDate
+                    FROM APIMaster
+                    ORDER BY APIName
+                `;
+                
+                const apis = await executeQuery(query);
 
-            await executeQuery(createTableQuery);
-            console.log('APIMaster table created successfully');
-        } else {
-            // Check if AutoId column exists, if not add it (but only if no primary key exists)
-            const hasAutoId = tableStructure.some(col => col.COLUMN_NAME === 'AutoId');
-            if (!hasAutoId) {
-                try {
-                    // Check if there's already a primary key
-                    const checkPrimaryKeyQuery = `
-                        SELECT COLUMN_NAME 
-                        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
-                        WHERE TABLE_NAME = 'APIMaster' 
-                        AND CONSTRAINT_NAME LIKE 'PK_%'
-                    `;
-                    const primaryKeyColumns = await executeQuery(checkPrimaryKeyQuery);
-
-                    if (primaryKeyColumns.length === 0) {
-                        // No primary key exists, safe to add AutoId as primary key
-                        const addAutoIdQuery = `ALTER TABLE APIMaster ADD AutoId INT IDENTITY(1,1) PRIMARY KEY`;
-                        await executeQuery(addAutoIdQuery);
-                        console.log('Added AutoId column to APIMaster table');
-                    } else {
-                        // Primary key exists, just add AutoId as regular column
-                        const addAutoIdQuery = `ALTER TABLE APIMaster ADD AutoId INT IDENTITY(1,1)`;
-                        await executeQuery(addAutoIdQuery);
-                        console.log('Added AutoId column to APIMaster table (without primary key constraint)');
-                    }
-                } catch (autoIdError) {
-                    console.log('AutoId column may already exist or table structure is different:', autoIdError.message);
-                }
+                return res.status(200).json({
+                    success: true,
+                    message: 'APIs retrieved successfully',
+                    data: apis
+                });
             }
-
-            // Check if CreatedDate column exists, if not add it
-            const hasCreatedDate = tableStructure.some(col => col.COLUMN_NAME === 'CreatedDate');
-            if (!hasCreatedDate) {
-                try {
-                    const addColumnQuery = `ALTER TABLE APIMaster ADD CreatedDate DATETIME DEFAULT GETDATE()`;
-                    await executeQuery(addColumnQuery);
-                    console.log('Added CreatedDate column to APIMaster table');
-                } catch (dateError) {
-                    console.log('CreatedDate column may already exist:', dateError.message);
-                }
-            }
-
-            // Check if IsDeleted column exists, if not add it for soft delete functionality
-            const hasIsDeleted = tableStructure.some(col => col.COLUMN_NAME === 'IsDeleted');
-            if (!hasIsDeleted) {
-                try {
-                    const addIsDeletedQuery = `ALTER TABLE APIMaster ADD IsDeleted BIT DEFAULT 0`;
-                    await executeQuery(addIsDeletedQuery);
-                    console.log('Added IsDeleted column to APIMaster table for soft delete functionality');
-                } catch (isDeletedError) {
-                    console.log('IsDeleted column may already exist:', isDeletedError.message);
-                }
-            }
+            // If it's another error, rethrow it
+            throw error;
         }
+        
     } catch (error) {
-        console.error('Error ensuring APIMaster table:', error);
-        // Don't throw the error, just log it - the table might already exist with the right structure
-        console.log('Continuing with existing table structure...');
-    }
-};
-
-
-// GET /api/apimaster/getAllAPI - Get all APIs
-export const getAllAPI = async (req, res) => {
-    try {
-        // Try to ensure table exists, but don't fail if it already exists
-        try {
-            await ensureAPIMasterTable();
-        } catch (tableError) {
-            console.log('Table setup warning (continuing):', tableError.message);
-        }
-
-        const selectQuery = `
-            SELECT * FROM APIMaster 
-            ORDER BY CASE WHEN CreatedDate IS NOT NULL THEN CreatedDate ELSE '1900-01-01' END DESC
-        `;
-
-        const apis = await executeQuery(selectQuery);
-
-        res.status(200).json({
-            success: true,
-            message: 'APIs retrieved successfully',
-            data: apis
-        });
-    } catch (error) {
-        console.error('Error fetching APIs:', error);
+        console.error('Error in getAllAPIs:', error);
         res.status(500).json({
             success: false,
-            message: 'Internal server error',
+            message: 'Failed to fetch APIs',
             error: error.message
         });
     }
 };
 
-// POST /api/apimaster/addAPI - Create new API
 export const addAPI = async (req, res) => {
     try {
-        // Try to ensure table exists, but don't fail if it already exists
-        try {
-            await ensureAPIMasterTable();
-        } catch (tableError) {
-            console.log('Table setup warning (continuing):', tableError.message);
-        }
-
         const {
-            API_Id,
-            API_Name,
-            API_Description,
-            API_Code,
+            APIId,  
+            APIName,
+            APICode,
+            APIDescription,
+            Version = '1.0',  // Default to '1.0' if not provided
+            MethodName = 'GET',
+            BasePrice = 0.00,
+            SellPrice = 0.00
         } = req.body;
 
-        // Basic validation - API_Id and API_Name are required
-        if (!API_Id) {
+        // In a real application, the user ID would come from authentication middleware (e.g., JWT token).
+        // Example: const CreatedBy = req.user.id;
+        // For this example, we'll use a default system user ID.
+        const CreatedBy = "Test User";
+
+        // --- Validation ---
+        // APIName and APICode are essential, so we validate their presence.
+        if (!APIName || !APICode) {
             return res.status(400).json({
                 success: false,
-                message: 'API_Id is required'
+                message: 'APIName and APICode are required fields.'
             });
         }
 
-        if (!API_Name) {
-            return res.status(400).json({
-                success: false,
-                message: 'API_Name is required'
-            });
-        }
-
-        // Check if API_Id already exists
-        const checkExistingQuery = `SELECT API_Id FROM APIMaster WHERE API_Id = ? AND (IsDeleted = 0 OR IsDeleted IS NULL)`;
-        const existingAPI = await executeQuery(checkExistingQuery, [API_Id]);
+        // --- Uniqueness Check ---
+        // Check if APICode already exists to enforce uniqueness
+        const checkExistingQuery = `
+            SELECT APICode 
+            FROM APIMaster 
+            WHERE APICode = ?
+        `;
+        const existingAPI = await executeQuery(checkExistingQuery, [APICode]);
 
         if (existingAPI.length > 0) {
-            return res.status(400).json({
+            return res.status(409).json({
                 success: false,
-                message: 'API_Id already exists. Please choose a different API_Id.'
+                message: 'APICode already exists. Please use a different value.'
             });
         }
 
-        console.log('Using user-provided API ID:', API_Id);
-
-        // Insert new API with user-provided API_Id - try with CreatedDate first, fallback without it
-        let insertQuery = `
-            INSERT INTO APIMaster (
-                API_Id,
-                API_Name,
-                API_Description,
-                API_Code,
-                CreatedDate
-            ) VALUES (
-                ?, ?, ?, ?, GETDATE()
-            )
-        `;
-
-        let insertParams = [
-            API_Id,
-            API_Name,
-            API_Description || null,
-            API_Code || null
-        ];
-
         try {
-            await executeQuery(insertQuery, insertParams);
-        } catch (insertError) {
-            // If CreatedDate column doesn't exist, try without it
-            console.log('Trying insert without CreatedDate column...');
-            insertQuery = `
+            const insertQuery = `
                 INSERT INTO APIMaster (
-                    API_Id,
-                    API_Name,
-                    API_Description,
-                    API_Code
-                ) VALUES (
-                    ?, ?, ?, ?
+                    APICode,
+                    APIName,
+                    APIDescription,
+                    Version,
+                    MethodName,
+                    BasePrice,
+                    SellPrice,
+                    CreatedBy,
+                    CreatedDate,
+                    UpdatedDate
                 )
+                OUTPUT INSERTED.*
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), GETDATE());
             `;
-            await executeQuery(insertQuery, insertParams);
+
+            // Prepare parameters for the query to prevent SQL injection.
+            const insertParams = [
+                APICode,
+                APIName,
+                APIDescription || null, 
+                Version, 
+                MethodName,
+                parseFloat(BasePrice) || 0.00,
+                parseFloat(SellPrice) || 0.00,
+                CreatedBy
+                // CreatedDate and UpdatedDate are set to GETDATE() in the SQL query
+            ];
+
+            // Execute the query and get the newly created API record.
+            const newAPIRecord = await executeQuery(insertQuery, insertParams);
+
+            // --- Success Response ---
+            // Send a 201 Created status with the new API data.
+            res.status(201).json({
+                success: true,
+                message: 'API created successfully.',
+                data: newAPIRecord[0] // The query returns an array, so we take the first element
+            });
+        } catch (error) {
+            console.error('Error during API creation:', error);
+            throw error; // Re-throw to be caught by the outer catch block
+        } finally {
+            // Always ensure IDENTITY_INSERT is turned off, even if there was an error
+            try {
+                await executeQuery('SET IDENTITY_INSERT APIMaster OFF;');
+            } catch (e) {
+                console.error('Error turning off IDENTITY_INSERT:', e);
+            }
         }
 
-        // Fetch the newly created API using the API_Id
-        const selectQuery = `SELECT * FROM APIMaster WHERE API_Id = ?`;
-        const newAPI = await executeQuery(selectQuery, [API_Id]);
-
-        res.status(201).json({
-            success: true,
-            message: 'API created successfully',
-            data: newAPI[0]
-        });
-    } catch (error) {
+     } catch (error) {
         console.error('Error creating API:', error);
         res.status(500).json({
             success: false,
-            message: 'Internal server error',
+            message: 'An internal server error occurred.',
             error: error.message
         });
     }
 };
+ 
 
-
-// PUT /api/apimaster/updateAPI/:id - Update existing API
 export const updateAPI = async (req, res) => {
-    // IMMEDIATE BLOCK - Check for API_Id before anything else
-    if (req.body && req.body.API_Id !== undefined) {
-        return res.status(400).json({
-            success: false,
-            message: 'API_Id cannot be updated as it is the primary key',
-            error: 'PRIMARY_KEY_UPDATE_BLOCKED'
-        });
-    }
-
     try {
         const { id } = req.params;
-        const updateFields = req.body; // user can send any field
-
-        const requestKeys = Object.keys(updateFields);
-        const apiIdVariations = ['API_Id', 'api_id', 'apiId', 'API_ID', 'Api_Id', 'api_Id'];
-
-        for (const key of requestKeys) {
-            console.log(`Checking key: "${key}"`);
-            if (apiIdVariations.includes(key)) {
-                console.log(`BLOCKED: Found API_Id field "${key}" in request`);
-                return res.status(400).json({
-                    success: false,
-                    message: `API_Id cannot be updated as it is the primary key. Attempted field: ${key}`,
-                    blockedField: key,
-
-                });
-            }
+        
+        console.log('=== Starting Update Process ===');
+        console.log('Request params:', req.params);
+        console.log('Request headers:', req.headers);
+        console.log('Request body:', JSON.stringify(req.body, null, 2));
+        
+        // Validate ID
+        if (!id) {
+            console.error('Error: No ID provided in request');
+            return res.status(400).json({
+                success: false,
+                message: 'API ID is required for update',
+                receivedParams: req.params
+            });
         }
-
-        // Remove all possible API_Id variations from updateFields (extra safety)
-        apiIdVariations.forEach(field => {
-            if (updateFields[field]) {
-                console.log(`Removing field: ${field}`);
-                delete updateFields[field];
+        
+        // Get the update fields from request body
+        const updateFields = req.body;
+        
+        // Log the raw request body for debugging
+        let rawBody = '';
+        req.on('data', chunk => {
+            rawBody += chunk.toString();
+        });
+        
+        console.log('Raw request body (stream):', rawBody);
+        
+        // Remove any null or undefined values
+        Object.keys(updateFields).forEach(key => {
+            if (updateFields[key] === null || updateFields[key] === undefined) {
+                delete updateFields[key];
             }
         });
-        console.log('Fields after cleanup:', Object.keys(updateFields));
 
-        // Check if at least one field is provided after removing API_Id
+        // If no valid fields to update
         if (Object.keys(updateFields).length === 0) {
             return res.status(400).json({
                 success: false,
@@ -381,206 +312,242 @@ export const updateAPI = async (req, res) => {
             });
         }
 
-        // Check if the API exists using the original API_Id from URL (exclude soft deleted)
-        let checkExistingQuery = `SELECT * FROM APIMaster WHERE API_Id = ? AND (IsDeleted = 0 OR IsDeleted IS NULL)`;
-        let existingAPI = await executeQuery(checkExistingQuery, [id]);
+        // First, check if the API exists
+        const checkQuery = `SELECT APIId, APIName, APICode, APIDescription, MethodName, BasePrice, SellPrice FROM APIMaster WHERE APIId = ?`;
+        const existingAPI = await executeQuery(checkQuery, [id]);
 
-        if (existingAPI.length === 0) {
+        if (!existingAPI || existingAPI.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'API not found.'
+            });
+        }
+        
+        const apiToUpdate = existingAPI[0];
+        console.log('Found API to update:', apiToUpdate);
+
+        // Build the update query
+        const setClauses = [];
+        const params = [];
+        
+        console.log('Raw request body:', JSON.stringify(req.body, null, 2));
+
+        const fieldMappings = {
+            'API_Name': 'APIName',
+            'API_Description': 'APIDescription',
+            'APICode': 'APICode',  
+            'API_Code': 'APICode',
+            'Version': 'Version',
+            'MethodName': 'MethodName',
+            'Base_Price': 'BasePrice',
+            'Sell_Price': 'SellPrice',
+            'UpdatedBy': 'UpdatedBy'
+        };
+        
+        console.log('Field mappings:', fieldMappings);
+
+        // Set both CreatedBy and UpdatedBy to 'Test User'
+        updateFields.UpdatedBy = 'Test User';
+        updateFields.CreatedBy = 'Test User';
+
+        // Add fields to update
+        for (const [key, value] of Object.entries(updateFields)) {
+            const dbColumn = fieldMappings[key] || key;
+            if (dbColumn && value !== undefined) {
+                setClauses.push(`${dbColumn} = ?`);
+                
+                // Convert field values to appropriate types
+                if (key === 'Base_Price' || key === 'SellPrice') {
+                    // Convert to number
+                    params.push(parseFloat(value) || 0);
+                } else if (key === 'Version') {
+                    // Keep version as string, default to '1.0' if empty
+                    params.push(value || '1.0');
+                    console.log('Version:', value);
+                } else {
+                    // Convert all other values to string
+                    params.push(String(value));
+                }
+            }
+        }
+
+        // Only update the UpdatedDate, leave CreatedDate as is
+        setClauses.push('UpdatedDate = GETDATE()');
+        
+        // Add the ID to the parameters for the WHERE clause
+        params.push(id);
+
+        // Build the final query
+        const updateQuery = `
+            UPDATE APIMaster
+            SET ${setClauses.join(', ')}
+            OUTPUT INSERTED.*
+            WHERE APIId = ?
+        `;
+        
+        console.log('Final update query:', updateQuery);
+        console.log('Query parameters:', [...params, id]);
+
+        console.log('Executing update query:', updateQuery);
+        console.log('With parameters:', params);
+        console.log('Set clauses:', setClauses);
+
+        // Execute the update
+        console.log('=== Executing Query ===');
+        console.log('Query:', updateQuery);
+        console.log('Parameters:', params);
+        
+        let result;
+        try {
+            console.log('Attempting to execute query...');
+            result = await executeQuery(updateQuery, params);
+            console.log('Query executed successfully');
+            console.log('Query result type:', typeof result);
+            console.log('Is array:', Array.isArray(result));
+            console.log('Result keys:', result ? Object.keys(result) : 'null');
+            
+            if (result && typeof result === 'object') {
+                console.log('Result properties:');
+                for (const [key, value] of Object.entries(result)) {
+                    console.log(`  ${key}:`, typeof value);
+                    if (Array.isArray(value)) {
+                        console.log(`  ${key} length:`, value.length);
+                    }
+                }
+            }
+            
+            console.log('Query result:', JSON.stringify(result, null, 2));
+        } catch (dbError) {
+            console.error('Database error:', dbError);
+            console.error('Error details:', {
+                message: dbError.message,
+                code: dbError.code,
+                sqlState: dbError.sqlstate,
+                originalError: dbError.originalError
+            });
+            throw new Error(`Database error: ${dbError.message}`);
+        }
+        
+        // Get the updated record
+        let updatedRecord = null;
+        if (Array.isArray(result) && result.length > 0) {
+            updatedRecord = result[0];
+        } else if (result && result.recordset && result.recordset.length > 0) {
+            updatedRecord = result.recordset[0];
+        } else {
+            // If no record returned, fetch it
+            const fetchQuery = 'SELECT * FROM APIMaster WHERE APIId = ?';
+            const fetchResult = await executeQuery(fetchQuery, [id]);
+            updatedRecord = Array.isArray(fetchResult) ? fetchResult[0] : 
+                         (fetchResult.recordset ? fetchResult.recordset[0] : null);
+        }
+
+        if (!updatedRecord) {
+            console.error('Error: Failed to retrieve updated API record');
+            console.log('Query result was:', result);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to retrieve updated API record',
+                query: updateQuery,
+                params: params,
+                result: result
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'API updated successfully',
+            data: updatedRecord
+        });
+
+    } catch (error) {
+        console.error('Error updating API:', error);
+        res.status(500).json({
+            success: false,
+            message: 'An error occurred while updating the API',
+            error: error.message
+        });
+    }
+}
+
+// Soft delete an API
+export const deleteAPI = async (req, res) => {
+    const { id } = req.params;
+    
+    console.log('Delete request received for API ID:', id);
+    
+    if (!id) {
+        console.error('No ID provided for deletion');
+        return res.status(400).json({
+            success: false,
+            message: 'API ID is required for deletion'
+        });
+    }
+
+    try {
+        console.log('Attempting to soft delete API with ID:', id);
+        
+        // First, verify the API exists and is not already deleted
+        const checkQuery = 'SELECT APIId, IsDeleted FROM APIMaster WHERE APIId = ?';
+        const existingApi = await executeQuery(checkQuery, [id]);
+        
+        if (!existingApi || existingApi.length === 0) {
+            console.error('API not found with ID:', id);
             return res.status(404).json({
                 success: false,
                 message: 'API not found'
             });
         }
-
-        // Dynamically build SET clause (excluding all API_Id variations)
-        const setClauses = [];
-        const params = [];
-        const forbiddenFields = ['API_Id', 'api_id', 'apiId', 'API_ID', 'AutoId', 'autoId'];
-
-        for (const key in updateFields) {
-            if (!forbiddenFields.includes(key)) { // Extra safety check
-                setClauses.push(`${key} = ?`);
-                params.push(updateFields[key]);
-            }
-        }
-
-        const updateQuery = `
-            UPDATE APIMaster
-            SET ${setClauses.join(', ')}
-            WHERE API_Id = ?
-        `;
-        params.push(id); // Use the original ID from URL params
-
-        console.log('Executing update query:', updateQuery);
-        console.log('With parameters:', params);
-
-        await executeQuery(updateQuery, params);
-        console.log('Update query executed successfully');
-
-        const selectQuery = `SELECT * FROM APIMaster WHERE API_Id = ?`;
-        const updatedAPI = await executeQuery(selectQuery, [id]);
-
-        console.log('Updated API fetched:', updatedAPI[0]);
-
-        res.status(200).json({
-            success: true,
-            message: 'API updated successfully',
-            data: updatedAPI[0]
-        });
-    } catch (error) {
-        console.error('Error updating API:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Internal server error',
-            error: error.message
-        });
-    }
-};
-
-
-// DELETE /api/apimaster/deleteAPI/:id - Delete API
-// DEBUG endpoint to check database contents
-export const debugDatabase = async (_req, res) => {
-    try {
-        const checkQuery = `SELECT * FROM APIMaster`;
-        const allRecords = await executeQuery(checkQuery);
-
-        res.status(200).json({
-            success: true,
-            message: 'Database debug info',
-            data: {
-                totalRecords: allRecords.length,
-                records: allRecords,
-                apiIds: allRecords.map(r => r.API_Id)
-            }
-        });
-    } catch (error) {
-        console.error('Error in debug:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Debug error',
-            error: error.message
-        });
-    }
-};
-
-// Setup endpoint to manually add IsDeleted column
-export const setupSoftDelete = async (_req, res) => {
-    try {
-        console.log('Setting up soft delete functionality...');
-
-        // Check if IsDeleted column exists
-        const checkColumnQuery = `
-            SELECT COLUMN_NAME 
-            FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_NAME = 'APIMaster' AND COLUMN_NAME = 'IsDeleted'
-        `;
-
-        const columnExists = await executeQuery(checkColumnQuery);
-
-        if (columnExists.length > 0) {
+        
+        // Check if already deleted
+        if (existingApi[0].IsDeleted === 1 || existingApi[0].IsDeleted === true) {
+            console.log('API already deleted with ID:', id);
             return res.status(200).json({
                 success: true,
-                message: 'IsDeleted column already exists',
-                data: { columnExists: true }
+                message: 'API already deleted'
             });
         }
+        
+        const updateQuery = `
+            UPDATE APIMaster
+            SET 
+                IsDeleted = 1,
+                UpdatedBy = ?,
+                UpdatedDate = GETDATE()
+            WHERE APIId = ?
+        `;
 
-        // Add IsDeleted column
-        const addColumnQuery = `ALTER TABLE APIMaster ADD IsDeleted BIT DEFAULT 0`;
-        await executeQuery(addColumnQuery);
-        console.log('Added IsDeleted column successfully');
+        const updatedBy = 'Test User';
+        
+        const result = await executeQuery(updateQuery, [updatedBy, id]);
 
-        // Update all existing records to have IsDeleted = 0
-        const updateExistingQuery = `UPDATE APIMaster SET IsDeleted = 0 WHERE IsDeleted IS NULL`;
-        await executeQuery(updateExistingQuery);
-        console.log('Updated existing records with IsDeleted = 0');
-
-        res.status(200).json({
-            success: true,
-            message: 'Soft delete functionality setup completed successfully',
-            data: {
-                columnAdded: true,
-                existingRecordsUpdated: true
-            }
-        });
-
-    } catch (error) {
-        console.error('Error setting up soft delete:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error setting up soft delete functionality',
-            error: error.message
-        });
-    }
-};
-
-export const deleteAPI = async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        console.log('Soft deleting API with ID:', id);
-
-        // Check if the API exists
-        let checkExistingQuery = `SELECT * FROM APIMaster WHERE API_Id = ? AND (IsDeleted = 0 OR IsDeleted IS NULL)`;
-        let existingAPI = await executeQuery(checkExistingQuery, [id]);
-
-        if (existingAPI.length === 0) {
+        console.log('Update result:', result);
+        
+        // Check for different possible result structures
+        const rowsAffected = result.rowsAffected || 
+                           (Array.isArray(result) ? result[0]?.rowsAffected : null) ||
+                           (result.recordset ? result.rowsAffected : null);
+        
+        console.log('Rows affected:', rowsAffected);
+        
+        if (rowsAffected > 0) {
+            console.log('Successfully soft deleted API with ID:', id);
+            return res.status(200).json({
+                success: true,
+                message: 'API deleted successfully'
+            });
+        } else {
+            console.error('No rows affected when trying to delete API with ID:', id);
             return res.status(404).json({
                 success: false,
                 message: 'API not found or already deleted'
             });
         }
-
-        // Soft delete the API by setting IsDeleted = 1
-        const currentRecord = existingAPI[0];
-        const softDeleteQuery = `UPDATE APIMaster SET IsDeleted = 1 WHERE API_Id = ?`;
-        await executeQuery(softDeleteQuery, [currentRecord.API_Id]);
-
-        res.status(200).json({
-            success: true,
-            message: 'API deleted successfully (soft delete)'
-        });
     } catch (error) {
-        res.status(500).json({
+        console.error('Error soft deleting API:', error);
+        return res.status(500).json({
             success: false,
-            message: 'Internal server error',
-            error: error.message
-        });
-    }
-};
-
-// PUT /api/apimaster/restoreAPI/:id - Restore soft-deleted API
-export const restoreAPI = async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        console.log('Restoring API with ID:', id);
-
-        // Check if the API exists and is deleted
-        let checkExistingQuery = `SELECT * FROM APIMaster WHERE API_Id = ? AND IsDeleted = 1`;
-        let existingAPI = await executeQuery(checkExistingQuery, [id]);
-
-        if (existingAPI.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'API not found or not deleted'
-            });
-        }
-
-        // Restore the API by setting IsDeleted = 0
-        const currentRecord = existingAPI[0];
-        const restoreQuery = `UPDATE APIMaster SET IsDeleted = 0 WHERE API_Id = ?`;
-        await executeQuery(restoreQuery, [currentRecord.API_Id]);
-
-        res.status(200).json({
-            success: true,
-            message: 'API restored successfully'
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Internal server error',
+            message: 'Failed to delete API',
             error: error.message
         });
     }

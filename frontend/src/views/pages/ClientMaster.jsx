@@ -1,17 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { useSelector } from 'react-redux';
-import { TBSelector } from '../../Store/Reducers/TBSlice';
 import Service from '../../Service/Service';
 import TableComponents from '../../components/ant/TableComponents';
 import toast, { Toaster } from 'react-hot-toast';
-import { Modal, notification } from 'antd';
-import CONFIG from '../../Config';
+import { Modal } from 'antd';
 import DeleteConfirmationModal from '../../components/common/DeleteConfirmationModal';
 
 
 export default function Client() {
     const userData = Service.getUserdata();
-    const { user } = useSelector(TBSelector);
     const [clientData, setClientData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -23,13 +19,15 @@ export default function Client() {
     const [deleteLoading, setDeleteLoading] = useState(false);
     const [formData, setFormData] = useState({
         ClientName: '',
+        ClientUserName: '',
         Client_ClientId: '',
         ClientContactNumber: '',
         ClientAddress: '',
         ClientPAN: '',
         ClientGST: '',
         ClientCIN: '',
-        Client_SecreteKey: ''
+        Client_SecreteKey: '',
+        Client_password: ''
     });
     const [formLoading, setFormLoading] = useState(false);
 
@@ -44,17 +42,7 @@ export default function Client() {
                 </span>
             ),
         },
-        {
-            title: 'Client ID',
-            dataIndex: 'Client_ClientId',
-            key: 'Client_ClientId',
-            width: 130,
-            render: (id) => (
-                <span className="font-semibold text-blue-600 dark:text-blue-400">
-                    {id || 'N/A'}
-                </span>
-            ),
-        },
+
         {
             title: 'Client Name',
             dataIndex: 'ClientName',
@@ -63,6 +51,17 @@ export default function Client() {
             render: (name) => (
                 <span className="font-medium text-gray-900 dark:text-white">
                     {name}
+                </span>
+            ),
+        },
+        {
+            title: 'UserName',
+            dataIndex: 'ClientUserName',
+            key: 'ClientUserName',
+            width: 200,
+            render: (username) => (
+                <span className="font-medium text-gray-900 dark:text-white">
+                    {username}
                 </span>
             ),
         },
@@ -107,6 +106,17 @@ export default function Client() {
             render: (gst) => (
                 <span className="font-mono text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">
                     {gst}
+                </span>
+            ),
+        },
+        {
+            title: 'CIN',
+            dataIndex: 'ClientCIN',
+            key: 'ClientCIN',
+            width: 120,
+            render: (cin) => (
+                <span className="font-mono text-xs px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded">
+                    {cin}
                 </span>
             ),
         },
@@ -240,10 +250,17 @@ export default function Client() {
             return;
         }
 
+        if (!formData.ClientUserName) {
+            setError('UserName is required');
+            return;
+        }
+
         try {
             setFormLoading(true);
+            console.log('Form data being sent:', formData); // Debug log
             const result = await Service.createClientMaster({
                 ...formData,
+                ClientPassword: formData.Client_password, // Map frontend field to backend field
                 CreatedBy: userData?.name || 'Unknown'
             });
 
@@ -253,13 +270,15 @@ export default function Client() {
                 closeModal();
                 setFormData({
                     ClientName: '',
+                    ClientUserName: '',
+                    Client_ClientId: '',
                     ClientContactNumber: '',
                     ClientAddress: '',
                     ClientPAN: '',
                     ClientGST: '',
                     ClientCIN: '',
                     Client_SecreteKey: '',
-                    Client_ClientId: ''
+                    Client_password: ''
                 });
             } else {
                 const errorMessage = result.message || 'Failed to add client';
@@ -278,12 +297,43 @@ export default function Client() {
 
     const handleUpdateClient = async (e) => {
         e.preventDefault();
+
+        // Validate required fields
+        if (!formData.ClientName || formData.ClientName.trim() === '') {
+            setError('Client Name is required');
+            return;
+        }
+
+        if (!formData.ClientUserName || formData.ClientUserName.trim() === '') {
+            setError('UserName is required');
+            return;
+        }
+
         try {
             setFormLoading(true);
             const updateData = {
-                ...formData,
                 UpdatedBy: userData?.name || 'Unknown'
             };
+
+            // Include required fields (they're validated above)
+            updateData.ClientName = formData.ClientName.trim();
+            updateData.ClientUserName = formData.ClientUserName.trim();
+
+            // Only include password if it's provided (not empty)
+            if (formData.Client_password && formData.Client_password.trim() !== '') {
+                updateData.ClientPassword = formData.Client_password;
+            }
+
+            // These fields can be cleared (set to empty), so include them even if empty
+            updateData.ClientContactNumber = formData.ClientContactNumber;
+            updateData.ClientAddress = formData.ClientAddress;
+            updateData.ClientPAN = formData.ClientPAN;
+            updateData.ClientGST = formData.ClientGST;
+            updateData.ClientCIN = formData.ClientCIN;
+            updateData.Client_SecreteKey = formData.Client_SecreteKey;
+
+            console.log('Update data being sent:', updateData); // Debug log
+
             const result = await Service.updateClientMaster(editingClient.AutoId, updateData);
             if (result.success) {
                 toast.success('Client updated successfully!');
@@ -334,16 +384,19 @@ export default function Client() {
     };
 
     const handleEditClick = (record) => {
+        console.log('Editing record:', record); // Debug log
         setEditingClient(record);
         setFormData({
             ClientName: record.ClientName || '',
+            ClientUserName: record.ClientUserName || '', // This will show current value or empty if NULL
             Client_ClientId: record.Client_ClientId || '',
             ClientContactNumber: record.ClientContactNumber || '',
             ClientAddress: record.ClientAddress || '',
             ClientPAN: record.ClientPAN || '',
             ClientGST: record.ClientGST || '',
             ClientCIN: record.ClientCIN || '',
-            Client_SecreteKey: record.Client_SecreteKey || ''
+            Client_SecreteKey: record.Client_SecreteKey || '',
+            Client_password: '' // Always empty for security
         });
         setShowEditModal(true);
     };
@@ -357,13 +410,15 @@ export default function Client() {
         setShowAddModal(false);
         setFormData({
             ClientName: '',
+            ClientUserName: '',
             Client_ClientId: '',
             ClientContactNumber: '',
             ClientAddress: '',
             ClientPAN: '',
             ClientGST: '',
             ClientCIN: '',
-            Client_SecreteKey: ''
+            Client_SecreteKey: '',
+            Client_password: ''
         });
         setError(null);
     };
@@ -373,13 +428,15 @@ export default function Client() {
         setEditingClient(null);
         setFormData({
             ClientName: '',
+            ClientUserName: '',
             Client_ClientId: '',
             ClientContactNumber: '',
             ClientAddress: '',
             ClientPAN: '',
             ClientGST: '',
             ClientCIN: '',
-            Client_SecreteKey: ''
+            Client_SecreteKey: '',
+            Client_password: ''
         });
         setError(null);
     };
@@ -461,6 +518,33 @@ export default function Client() {
                             type="text"
                             name="Client_ClientId"
                             value={formData.Client_ClientId}
+                            onChange={handleInputChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            UserName *
+                        </label>
+                        <input
+                            type="text"
+                            name="ClientUserName"
+                            value={formData.ClientUserName}
+                            onChange={handleInputChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Password *
+                        </label>
+                        <input
+                            type="password"
+                            name="Client_password"
+                            value={formData.Client_password}
                             onChange={handleInputChange}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                             required
@@ -591,6 +675,34 @@ export default function Client() {
                         />
                     </div>
 
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            UserName*
+                        </label>
+                        <input
+                            type="text"
+                            name="ClientUserName"
+                            value={formData.ClientUserName}
+                            onChange={handleInputChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Password
+                        </label>
+                        <input
+                            type="password"
+                            name="Client_password"
+                            value={formData.Client_password}
+                            onChange={handleInputChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Leave blank to keep current password"
+                        />
+                    </div>
+
                     {/* Client ID Display - Cannot be updated */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -599,7 +711,7 @@ export default function Client() {
                         <div className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-600">
                             {editingClient?.Client_ClientId || 'Not assigned'}
                         </div>
-                       
+
                     </div>
 
                     <div>

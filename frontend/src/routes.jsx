@@ -6,7 +6,6 @@ import Welcome from "./views/dashboard/Welcome.jsx";
 import DashIcon from "./components/icons/DashIcon";
 import Infodata from "./data/Infodata.js";
 import dashboardw from "./assets/img/logo/deshboardwhite.png";
-import Client from "./views/pages/client";
 import ClientMaster from "./views/pages/ClientMaster";
 import APIMaster from "./views/pages/APIMaster";
 
@@ -22,14 +21,6 @@ const routes = [
     layout: "/dashboard",
     path: "welcome",
     component: <Welcome />,
-  },
-  {
-    name: "Client",
-    layout: "/admin",
-    path: "client",
-    component: <Client />,
-    icon: { iconlight: Infodata.dashboardw, bgcoloer: "bg-purple-700" },
-
   },
   {
     name: "Client Master",

@@ -54,7 +54,7 @@ router.get('/', async (req, res) => {
             ClientGST: client.GST,
             ClientCIN: null,
             Client_SecreteKey: client.SecretKey,
-            CreatedBy: 'System',
+            CreatedBy: 'Test User',
             CreatedDate: new Date().toISOString().split('T')[0]
         }));
         
